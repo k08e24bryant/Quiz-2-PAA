@@ -3,12 +3,19 @@ import os
 import pygame
 import random
 
-
 # Colors
-BLACK = (33, 33, 33)            # Charcoal (For borders)
-DARKGRAY = (72, 72, 72)         # Graphite (For unvisited cells/walls)
-YELLOW = (255, 223, 100)        # Soft Gold (For maze paths and broken borders)
-WHITE = (245, 245, 245)         # For any text, if needed in this step
+WHITE = (245, 245, 245)         # Mist White
+BLACK = (33, 33, 33)            # Charcoal
+RED = (255, 127, 80)            # Coral (Fallback player color)
+DARKGRAY = (72, 72, 72)         # Graphite (Default cell/wall color)
+YELLOW = (255, 223, 100)        # Soft Gold (Path color)
+BLUE = (0, 128, 128)            # Teal (Win message color)
+LIGHTORANGE = (255, 204, 153)   # Apricot (Used in initial_screen)
+INTERMEDIARYORANGE = (255, 160, 122) # Light Salmon (Used in initial_screen)
+# Colors for BFS/Solution path (will be used more in Step 3)
+PINK = (255, 182, 193)
+ORANGE = (255, 140, 0)
+
 
 # Maze Configuration
 BORDER_THICKNESS = 1.0
@@ -17,19 +24,19 @@ SIZE = 25  # Size of each cell
 # Screen Dimensions
 WIDTH = 600 # Maze area width
 HEIGHT = 600 # Maze area height
-# HEIGHT_TOTAL is not strictly needed for Step 1 as there's no info panel yet,
-# but we can define it for consistency with later steps.
-HEIGHT_TOTAL = 680 
-SCREEN_SIZE = (WIDTH, HEIGHT) # Step 1 will only use the maze area height
+HEIGHT_TOTAL = 680 # Total screen height (Step 2 will only use basic info)
+SCREEN_SIZE = (WIDTH, HEIGHT_TOTAL) # Use full height for consistency
 
-# Font Sizes (only if text function is used for status)
+# Font Sizes
 FONTSIZE_STATUS = 20
+FONTSIZE_MESSAGE = 28 # For win message
+FONTSIZE_CONTROLS = 14 # For R and ESC text
+# Constants from user's file, used in initial_screen (though initial_screen is more for Step 3)
+FONTSIZE_START = 28
+FONTSIZE_COMMANDS_INTIAL = 15
+
 
 def text(background, message, color, size, coordinate_x=None, coordinate_y=None, center=False, align_right=False):
-    """
-    Renders text on the given background surface.
-    Not heavily used in Step 1 but included as requested.
-    """
     font_path = os.path.join("fonts", "Orbitron-VariableFont_wght.ttf")
     try:
         font = pygame.font.Font(font_path, size)
@@ -50,12 +57,8 @@ def text(background, message, color, size, coordinate_x=None, coordinate_y=None,
     background.blit(text_surface, text_rect)
 
 class NodeBorder():
-    """
-    Represents a border segment of a Node.
-    Developer A is responsible for this class.
-    """
     def _init_(self, pos_x, pos_y, width, height):
-        self.color = BLACK  # All borders start as black (solid walls)
+        self.color = BLACK
         self.pos_x = pos_x
         self.pos_y = pos_y
         self.width = width
@@ -65,155 +68,143 @@ class NodeBorder():
         pygame.draw.rect(background, self.color, [self.pos_x, self.pos_y, self.width, self.height])
 
 class Node():
-    """
-    Represents a single cell in the maze.
-    Developer A is responsible for this class.
-    """
     def _init_(self, screen_pos_x, screen_pos_y):
-        self.color = DARKGRAY  # Default color for unvisited cells (walls)
-        self.visited = False   # For DFS maze generation
-        self.neighbors = []    # Potential neighbors for DFS
-        self.neighbors_connected = [] # Actual connected neighbors (path exists) - for later steps
-        self.parent = None     # For BFS path reconstruction - for later steps
-        
-        self.matrix_pos_x = 0  # Row index in the maze grid (will be set by Maze class)
-        self.matrix_pos_y = 0  # Column index in the maze grid (will be set by Maze class)
-
-        self.pos_x = screen_pos_x # Screen X coordinate (top-left)
-        self.pos_y = screen_pos_y # Screen Y coordinate (top-left)
+        self.color = DARKGRAY 
+        self.visited = False 
+        self.explored = False # For BFS (Step 3)
+        self.matrix_pos_x = 0 
+        self.matrix_pos_y = 0 
+        self.pos_x = screen_pos_x
+        self.pos_y = screen_pos_y
         self.width = SIZE
         self.height = SIZE
-
-        # Borders
         self.top_border = NodeBorder(self.pos_x, self.pos_y, SIZE, BORDER_THICKNESS)
         self.bottom_border = NodeBorder(self.pos_x, self.pos_y + SIZE - BORDER_THICKNESS, SIZE, BORDER_THICKNESS)
         self.right_border = NodeBorder(self.pos_x + SIZE - BORDER_THICKNESS, self.pos_y, BORDER_THICKNESS, SIZE)
         self.left_border = NodeBorder(self.pos_x, self.pos_y, BORDER_THICKNESS, SIZE)
-        
-        self.special_icon = None # Placeholder for Step 2/3
+        self.neighbors = []
+        self.neighbors_connected = [] 
+        self.parent = None 
+        self.special_icon = None # ENHANCEMENT FOR STEP 2
 
     def render(self, background):
-        # Draw base cell color
+        # Draw base cell color (e.g., YELLOW for path, DARKGRAY for unvisited)
         pygame.draw.rect(background, self.color, [self.pos_x, self.pos_y, self.width, self.height])
         
-        # Render borders on top
+        # ENHANCEMENT FOR STEP 2: Render special icon if it exists
+        if self.special_icon:
+            icon_x = self.pos_x + (self.width - self.special_icon.get_width()) // 2
+            icon_y = self.pos_y + (self.height - self.special_icon.get_height()) // 2
+            background.blit(self.special_icon, (icon_x, icon_y))
+        
         self.top_border.render(background)
         self.bottom_border.render(background)
         self.right_border.render(background)
         self.left_border.render(background)
 
 class Maze():
-    """
-    Manages the grid of Nodes and maze generation logic.
-    Developer A is responsible for this class.
-    """
-    def _init_(self, background): # No icons passed in Step 1
-        self.background_surface = background # Store for potential status text
+    def _init_(self, background, initial_x_row, initial_y_col, final_x_row, final_y_col, 
+                 start_cell_icon=None, finish_cell_icon=None): # ENHANCEMENT FOR STEP 2
+        self.background_surface = background 
         self.maze = []
         self.total_nodes = 0
-        self.maze_created = False # Will be set to True after DFS
-        
+        self.maze_created = False
+        self.initial_coordinate_x_row = initial_x_row
+        self.initial_coordinate_y_col = initial_y_col
+        self.final_coordinate_x_row = final_x_row
+        self.final_coordinate_y_col = final_y_col
         self.num_rows = HEIGHT // SIZE
         self.num_cols = WIDTH // SIZE
 
-        # Create the grid of Node objects
         for r_idx in range(self.num_rows):
             maze_row_list = []
             for c_idx in range(self.num_cols):
                 current_screen_x = c_idx * SIZE
                 current_screen_y = r_idx * SIZE
                 node = Node(current_screen_x, current_screen_y)
-                node.matrix_pos_x = r_idx # Set matrix position
-                node.matrix_pos_y = c_idx # Set matrix position
+                node.matrix_pos_x = r_idx
+                node.matrix_pos_y = c_idx
                 maze_row_list.append(node)
                 self.total_nodes += 1
             self.maze.append(maze_row_list)
         
+        # ENHANCEMENT FOR STEP 2: Assign special icons and set base color to YELLOW
+        if start_cell_icon:
+            start_node = self.maze[self.initial_coordinate_x_row][self.initial_coordinate_y_col]
+            start_node.special_icon = start_cell_icon
+            start_node.color = YELLOW # Path color as background for icon
+        if finish_cell_icon:
+            finish_node = self.maze[self.final_coordinate_x_row][self.final_coordinate_y_col]
+            finish_node.special_icon = finish_cell_icon
+            finish_node.color = YELLOW # Path color as background for icon
+
         self.define_neighbors()
 
     def add_edge(self, node, neighbor):
-        # This function will be more relevant for BFS in later steps,
-        # but DFS uses it to know which cells are connected.
         neighbor.neighbors_connected.append(node)
         node.neighbors_connected.append(neighbor)
 
     def remove_neighbors_visited(self, node):
-        # Filters out neighbors that have already been visited by DFS
         node.neighbors = [n for n in node.neighbors if not n.visited]
     
     def define_neighbors(self):
-        # Populates the .neighbors list for each node (potential connections)
         for r in range(self.num_rows):
             for c in range(self.num_cols):
                 node = self.maze[r][c]
-                node.neighbors = [] # Clear previous list
-                # Top neighbor
+                node.neighbors = []
                 if r > 0: node.neighbors.append(self.maze[r - 1][c])
-                # Bottom neighbor
                 if r < self.num_rows - 1: node.neighbors.append(self.maze[r + 1][c])
-                # Left neighbor
                 if c > 0: node.neighbors.append(self.maze[r][c - 1])
-                # Right neighbor
                 if c < self.num_cols - 1: node.neighbors.append(self.maze[r][c + 1])
                                 
-    def break_border(self, node1, node2):
-        # Changes the color of the border between node1 and node2 to YELLOW (path color)
-        # node1 is current, node2 is the chosen neighbor
-        
-        # node2 is to the RIGHT of node1
+    def break_border(self, node1, node2): # Color parameter removed, path is always YELLOW
+        path_color = YELLOW
         if node2.matrix_pos_y == node1.matrix_pos_y + 1 and node2.matrix_pos_x == node1.matrix_pos_x:
-            node1.right_border.color = YELLOW
-            node2.left_border.color = YELLOW
-        # node2 is to the LEFT of node1
+            node1.right_border.color = path_color
+            node2.left_border.color = path_color
         elif node2.matrix_pos_y == node1.matrix_pos_y - 1 and node2.matrix_pos_x == node1.matrix_pos_x:
-            node1.left_border.color = YELLOW
-            node2.right_border.color = YELLOW
-        # node2 is BELOW node1
+            node1.left_border.color = path_color
+            node2.right_border.color = path_color
         elif node2.matrix_pos_x == node1.matrix_pos_x + 1 and node2.matrix_pos_y == node1.matrix_pos_y:
-            node1.bottom_border.color = YELLOW
-            node2.top_border.color = YELLOW
-        # node2 is ABOVE node1
+            node1.bottom_border.color = path_color
+            node2.top_border.color = path_color
         elif node2.matrix_pos_x == node1.matrix_pos_x - 1 and node2.matrix_pos_y == node1.matrix_pos_y:
-            node1.top_border.color = YELLOW
-            node2.bottom_border.color = YELLOW
+            node1.top_border.color = path_color
+            node2.bottom_border.color = path_color
     
     def _reset_maze_state(self):
-        """ Helper to reset nodes for new maze generation. """
         for r in range(self.num_rows):
             for c in range(self.num_cols):
                 node = self.maze[r][c]
                 node.visited = False
-                node.color = DARKGRAY # Reset to wall color
-                node.neighbors_connected = [] # Clear connections
+                node.color = DARKGRAY 
+                node.neighbors_connected = [] 
                 node.parent = None
-                # Reset borders to black
                 node.top_border.color = BLACK
                 node.bottom_border.color = BLACK
                 node.left_border.color = BLACK
                 node.right_border.color = BLACK
-        self.define_neighbors() # Re-define potential neighbors
+                # Reset special_icon if they are tied to a specific maze instance, 
+                # but here they are passed in, so Node objects are new each time.
+                # If special_icons were attributes of the Node class from its init, you might clear them here.
+                # For this structure, special icons are re-assigned in Maze._init_
+        self.define_neighbors()
 
     def dfs(self, background_surface_for_text=None):
-        """ Generates the maze using Depth-First Search algorithm. """
-        self._reset_maze_state() # Ensure maze is clean before generation
-
-        # Start DFS from a random cell
+        self._reset_maze_state() 
         start_row = random.randint(0, self.num_rows - 1)
         start_col = random.randint(0, self.num_cols - 1)
         current_cell = self.maze[start_row][start_col]
-        
         current_cell.visited = True
-        current_cell.color = YELLOW # Path cells are YELLOW
+        current_cell.color = YELLOW
+        
         stack = [current_cell]
         visited_cells = 1
-        
         render_counter = 0
-        # Render approximately 100 times during generation, or at least once per node if very small maze
         render_interval = max(1, self.total_nodes // 100 if self.total_nodes > 0 else 1) 
 
         while visited_cells < self.total_nodes or len(stack) > 0:
-            if not stack: # Should ideally not happen if all cells are reachable
-                # Attempt to find an unvisited cell if stack becomes empty (for disconnected components)
+            if not stack:
                 found_unvisited_component = False
                 for r_find in range(self.num_rows):
                     for c_find in range(self.num_cols):
@@ -227,120 +218,335 @@ class Maze():
                             break
                     if found_unvisited_component: break
                 if not found_unvisited_component and visited_cells < self.total_nodes:
-                    # This indicates a potential issue if not all cells were made reachable
                     print("Warning: DFS stack empty but not all cells visited. Maze might have isolated parts.")
                     break 
-                if not stack: # Still no stack, means all processed or truly isolated
-                     break
+                if not stack: break
 
-            current_cell = stack[-1] # Peek
-            self.remove_neighbors_visited(current_cell) # Filter out already visited neighbors
+            current_cell = stack[-1]
+            self.remove_neighbors_visited(current_cell)
 
             if len(current_cell.neighbors) > 0:
                 random_neighbor = random.choice(current_cell.neighbors)
-                self.break_border(current_cell, random_neighbor) # Breaks border, sets color to YELLOW
-                self.add_edge(current_cell, random_neighbor) # For later use (BFS, monster AI)
-                
-                current_cell = random_neighbor # Move to the neighbor
+                self.break_border(current_cell, random_neighbor) 
+                self.add_edge(current_cell, random_neighbor) 
+                current_cell = random_neighbor
                 current_cell.visited = True
-                current_cell.color = YELLOW # New path cell is YELLOW
+                current_cell.color = YELLOW 
                 stack.append(current_cell)
                 visited_cells += 1
-            else: # No unvisited neighbors, backtrack
-                # current_cell.color is already YELLOW as it's part of the path
+            else: 
                 stack.pop()
             
-            # Render periodically for visualization during generation
             render_counter += 1
             if render_counter >= render_interval or not stack: 
-                if background_surface_for_text: # Only render text if surface provided
-                    self.render(background_surface_for_text) # Render maze on the game's background
-                    # Optional status text:
+                if background_surface_for_text: 
+                    self.render(background_surface_for_text)
                     # text(background_surface_for_text, "Generating Maze...", WHITE, FONTSIZE_STATUS, 10, HEIGHT + 10)
                     pygame.display.update()
                 render_counter = 0
         
+        # Ensure start/finish cells with icons have YELLOW background if visited (they should be)
+        start_node_final = self.maze[self.initial_coordinate_x_row][self.initial_coordinate_y_col]
+        if start_node_final.special_icon and start_node_final.visited: # Ensure it was part of the path
+            start_node_final.color = YELLOW
+        
+        finish_node_final = self.maze[self.final_coordinate_x_row][self.final_coordinate_y_col]
+        if finish_node_final.special_icon and finish_node_final.visited: # Ensure it was part of the path
+            finish_node_final.color = YELLOW
+        
         self.maze_created = True
-        # Final render after DFS is complete (on the main game background)
         if background_surface_for_text:
             self.render(background_surface_for_text)
             pygame.display.update()
 
-
     def render(self, background):
-        # Iterates through all nodes and calls their render method.
-        # Specific coloring for start/end (BEIGE/LIGHTBLUE) is removed as per Step 1.
-        # Path cells are YELLOW, walls are DARKGRAY, borders are BLACK/YELLOW.
         for r in range(self.num_rows):
             for c in range(self.num_cols):
                 self.maze[r][c].render(background)
 
+class Player(): # IMPLEMENTATION FOR STEP 2
+    def _init_(self, initial_x_row, initial_y_col, image_path="assets/player.png"):
+        self.matrix_pos_x_row = initial_x_row
+        self.matrix_pos_y_col = initial_y_col
+        max_dim_scale = 0.8
+        max_width = int(SIZE * max_dim_scale)
+        max_height = int(SIZE * max_dim_scale)
+        self.original_image = None 
+        try:
+            loaded_image = pygame.image.load(image_path).convert_alpha()
+            self.original_image = loaded_image 
+            original_width, original_height = loaded_image.get_size()
+            if original_height == 0: aspect_ratio = 1
+            else: aspect_ratio = original_width / float(original_height)
+            if original_width > original_height:
+                self.image_width = max_width
+                self.image_height = int(self.image_width / aspect_ratio) if aspect_ratio != 0 else max_height
+                if self.image_height > max_height:
+                    self.image_height = max_height
+                    self.image_width = int(self.image_height * aspect_ratio)
+            else:
+                self.image_height = max_height
+                self.image_width = int(self.image_height * aspect_ratio)
+                if self.image_width > max_width:
+                    self.image_width = max_width
+                    self.image_height = int(self.image_width / aspect_ratio) if aspect_ratio != 0 else max_height
+            self.image_width = max(1, self.image_width)
+            self.image_height = max(1, self.image_height)
+            self.image = pygame.transform.smoothscale(loaded_image, (self.image_width, self.image_height))
+        except pygame.error as e:
+            print(f"Error: Could not load player image at '{image_path}': {e}")
+            self.image = None
+            self.fallback_color = RED
+            self.image_width = int(SIZE * max_dim_scale) 
+            self.image_height = int(SIZE * max_dim_scale)
+        self._recalculate_screen_pos()
+
+    def _recalculate_screen_pos(self):
+        self.pos_x = self.matrix_pos_y_col * SIZE + (SIZE - self.image_width) // 2
+        self.pos_y = self.matrix_pos_x_row * SIZE + (SIZE - self.image_height) // 2
+
+    def update(self, maze_grid_nodes, events):
+        moved = False
+        for event in events:
+            if event.type == pygame.KEYDOWN:
+                current_node = maze_grid_nodes[self.matrix_pos_x_row][self.matrix_pos_y_col]
+                if event.key == pygame.K_LEFT and self.matrix_pos_y_col > 0 and \
+                   (current_node.left_border.color != BLACK):
+                    self.matrix_pos_y_col -= 1; moved = True
+                elif event.key == pygame.K_RIGHT and self.matrix_pos_y_col < (WIDTH // SIZE) - 1 and \
+                     (current_node.right_border.color != BLACK):
+                    self.matrix_pos_y_col += 1; moved = True
+                elif event.key == pygame.K_UP and self.matrix_pos_x_row > 0 and \
+                     (current_node.top_border.color != BLACK):
+                    self.matrix_pos_x_row -= 1; moved = True
+                elif event.key == pygame.K_DOWN and self.matrix_pos_x_row < (HEIGHT // SIZE) - 1 and \
+                     (current_node.bottom_border.color != BLACK):
+                    self.matrix_pos_x_row += 1; moved = True
+        if moved:
+            self._recalculate_screen_pos()
+
+    def render(self, background):
+        if self.image:
+            background.blit(self.image, (self.pos_x, self.pos_y))
+        elif hasattr(self, 'fallback_color'):
+            # Fallback rendering if image fails
+            fallback_rect_pos_x = self.pos_x # Use calculated pos_x, pos_y
+            fallback_rect_pos_y = self.pos_y
+            pygame.draw.rect(background, self.fallback_color, 
+                             [fallback_rect_pos_x, fallback_rect_pos_y, self.image_width, self.image_height])
+
+# Minimal Monster class for Step 2 (to avoid errors, fully implemented in Step 3)
+class Monster():
+    def _init_(self, start_row, start_col, image_path="assets/monster_1.png", move_delay=30):
+        self.matrix_pos_x_row = start_row
+        self.matrix_pos_y_col = start_col
+        # Basic image loading, actual AI and full features in Step 3
+        try:
+            max_dim_scale = 0.8
+            self.image_width = int(SIZE * max_dim_scale)
+            self.image_height = int(SIZE * max_dim_scale)
+            loaded_image = pygame.image.load(image_path).convert_alpha()
+            self.image = pygame.transform.smoothscale(loaded_image, (self.image_width, self.image_height))
+        except pygame.error as e:
+            print(f"Minimal Monster: Error loading image '{image_path}': {e}")
+            self.image = None
+        self._recalculate_screen_pos()
+
+
+    def _recalculate_screen_pos(self):
+         self.pos_x = self.matrix_pos_y_col * SIZE + (SIZE - self.image_width) // 2
+         self.pos_y = self.matrix_pos_x_row * SIZE + (SIZE - self.image_height) // 2
+    def update(self, player, maze_nodes):
+        pass # Monster AI and logic will be in Step 3
+    def render(self, background):
+        if self.image: # Only render if image loaded
+             background.blit(self.image, (self.pos_x, self.pos_y))
+
+
 class Game():
-    """
-    Manages the main game loop and game states.
-    Minimal version for Step 1. Developer A is responsible for this initial structure.
-    """
-    def _init_(self):
+    def _init_(self): # ENHANCEMENT FOR STEP 2
         try:
             pygame.init()
-            pygame.font.init() # Initialize font module if text() is used
+            pygame.font.init()
         except Exception as e:
             print(f'Error initializing Pygame: {e}')
             sys.exit(1)
-
-        self.screen = pygame.display.set_mode(SCREEN_SIZE) # Use full screen size for consistency
-        pygame.display.set_caption('Maze Game - Step 1: Framework')
+        self.screen = pygame.display.set_mode(SCREEN_SIZE)
+        pygame.display.set_caption('Maze Game - Step 2: Player')
         
         self.maze = None
+        self.player = None # ADDED FOR STEP 2
+        self.monsters = [] # Placeholder for Step 3
+        
+        self.initial_coordinate_x_row = 0
+        self.initial_coordinate_y_col = 0
+        self.final_coordinate_x_row = 0
+        self.final_coordinate_y_col = 0
+        
+        self.start_game_flow = False # Will be used more in Step 3 for intro screen
+        self.winner = False # ADDED FOR STEP 2
+        self.game_over = False # For Step 3
+        self.solved_by_system = False # For Step 3
+
+        self.exit_game = False
         self.clock = pygame.time.Clock()
 
-    def setup_new_game(self):
-        # Instantiate the Maze object
-        # Pass self.screen so Maze.dfs can update display during generation
-        self.maze = Maze(self.screen) 
+        # Icons for cells on the maze board
+        self.start_cell_icon_surf = None 
+        self.finish_cell_icon_surf = None 
+        self.cell_icon_size = int(SIZE * 0.9) 
 
-    def run(self):
+        # Icons for Legend (can be loaded here too, or later in Step 3)
+        self.legend_player_icon = None 
+        self.legend_start_icon = None
+        self.legend_finish_icon = None
+        self.legend_icon_size = int(SIZE*0.8)
+
+
+    def _load_icons(self): # NEW METHOD FOR STEP 2
+        # Load icons for cells on the maze board
+        try:
+            start_cell_orig = pygame.image.load("assets/start.png").convert_alpha()
+            self.start_cell_icon_surf = pygame.transform.smoothscale(start_cell_orig, (self.cell_icon_size, self.cell_icon_size))
+        except pygame.error as e: print(f"Error loading start.png for maze cell: {e}")
+        try:
+            finish_cell_orig = pygame.image.load("assets/finish.png").convert_alpha()
+            self.finish_cell_icon_surf = pygame.transform.smoothscale(finish_cell_orig, (self.cell_icon_size, self.cell_icon_size))
+        except pygame.error as e: print(f"Error loading finish.png for maze cell: {e}")
+        
+        # Load player icon for legend (can also be used for player itself if not overridden)
+        try:
+            player_img_orig = pygame.image.load("assets/player.png").convert_alpha()
+            self.legend_player_icon = pygame.transform.smoothscale(player_img_orig, (self.legend_icon_size, self.legend_icon_size))
+        except pygame.error as e: print(f"Error loading player.png for legend: {e}")
+
+
+    def setup_new_game(self): # ENHANCED FOR STEP 2
+        self._load_icons() # Load icons first
+
+        num_rows = HEIGHT // SIZE
+        num_cols = WIDTH // SIZE
+        
+        min_dist_start_finish = max(5, (num_rows + num_cols) // 4) 
+        valid_points = False
+        attempts = 0
+        max_attempts = 100 # Prevent infinite loop
+
+        while not valid_points and attempts < max_attempts:
+            self.initial_coordinate_x_row = random.randint(0, num_rows - 1)
+            self.initial_coordinate_y_col = random.randint(0, num_cols - 1)
+            self.final_coordinate_x_row = random.randint(0, num_rows - 1)
+            self.final_coordinate_y_col = random.randint(0, num_cols - 1)
+            
+            dist = abs(self.initial_coordinate_x_row - self.final_coordinate_x_row) + \
+                   abs(self.initial_coordinate_y_col - self.final_coordinate_y_col)
+            
+            if dist >= min_dist_start_finish and \
+               not (self.initial_coordinate_x_row == self.final_coordinate_x_row and \
+                    self.initial_coordinate_y_col == self.final_coordinate_y_col):
+                valid_points = True
+            attempts +=1
+        
+        if not valid_points:
+            print("Warning: Could not find start/finish points with sufficient distance. Using last attempt.")
+
+        self.maze = Maze(self.screen, 
+                           self.initial_coordinate_x_row, self.initial_coordinate_y_col, 
+                           self.final_coordinate_x_row, self.final_coordinate_y_col,
+                           start_cell_icon=self.start_cell_icon_surf, 
+                           finish_cell_icon=self.finish_cell_icon_surf)
+        
+        self.player = Player(self.initial_coordinate_x_row, self.initial_coordinate_y_col)
+        self.winner = False # Reset winner status for new game
+
+    def update_game_state(self, events): # NEW/ENHANCED FOR STEP 2
+        if self.winner or self.game_over: # For Step 3 game_over
+            return
+
+        if self.player:
+            self.player.update(self.maze.maze, events)
+
+        # Check win condition
+        if self.player and \
+           self.player.matrix_pos_x_row == self.final_coordinate_x_row and \
+           self.player.matrix_pos_y_col == self.final_coordinate_y_col:
+            if not self.winner: print("Winner!")
+            self.winner = True
+    
+    def render_game_elements(self): # NEW/ENHANCED FOR STEP 2
+        self.screen.fill(BLACK) 
+        if self.maze:
+            self.maze.render(self.screen)
+        if self.player:
+            self.player.render(self.screen)
+        
+        # Display win message
+        if self.winner:
+            text(self.screen, "MAZE COMPLETED!", BLUE, FONTSIZE_MESSAGE, 
+                 center=True, coordinate_y=HEIGHT // 2)
+        
+        # Display basic controls at the bottom (part of info panel for Step 3)
+        info_panel_y = HEIGHT + 10
+        text(self.screen, "R: Restart", WHITE, FONTSIZE_CONTROLS, 10, info_panel_y)
+        text(self.screen, "ESC: Exit", WHITE, FONTSIZE_CONTROLS, 120, info_panel_y)
+        
+        pygame.display.flip()
+
+
+    def run(self): # ENHANCED FOR STEP 2
         self.setup_new_game()
         
-        # Display "Generating Maze..." text (optional)
-        self.screen.fill(BLACK) # Clear screen
+        # For Step 1 & 2, we directly go into the game after DFS
+        # Intro screen logic can be added in Step 3's Game.run
+        self.screen.fill(BLACK) 
         # text(self.screen, "Generating Maze...", WHITE, FONTSIZE_STATUS + 10, center=True, coordinate_y=HEIGHT//2)
         # pygame.display.flip()
-
-        self.maze.dfs(self.screen) # Generate the maze, pass screen for updates
+        if self.maze:
+            self.maze.dfs(self.screen) 
 
         running = True
         while running:
-            for event in pygame.event.get():
+            events = pygame.event.get()
+            for event in events:
                 if event.type == pygame.QUIT:
                     running = False
                 if event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_ESCAPE:
                         running = False
-                    if event.key == pygame.K_r: # Simple restart for testing Step 1
+                    if event.key == pygame.K_r: 
+                        self.setup_new_game()
                         self.screen.fill(BLACK)
                         # text(self.screen, "Re-generating Maze...", WHITE, FONTSIZE_STATUS + 10, center=True, coordinate_y=HEIGHT//2)
                         # pygame.display.flip()
-                        self.maze.dfs(self.screen)
-
-
-            self.screen.fill(BLACK) # Clear screen before rendering maze
-            if self.maze:
-                self.maze.render(self.screen)
+                        if self.maze:
+                             self.maze.dfs(self.screen)
             
-            pygame.display.flip() # Update the full display
-            self.clock.tick(30) # Limit FPS
+            self.update_game_state(events) # Update player
+            self.render_game_elements()    # Render maze, player, and messages
+            
+            self.clock.tick(30)
 
         pygame.quit()
         sys.exit()
         
 def main():
-    # Check for fonts folder (optional, as text() has a fallback)
+    if not os.path.exists("assets"):
+        os.makedirs("assets")
+        print("Created 'assets' folder. Please place 'player.png', 'start.png', and 'finish.png' in it for Step 2.")
+    else:
+        required_step2_assets = ["player.png", "start.png", "finish.png"]
+        missing_assets = [asset for asset in required_step2_assets if not os.path.exists(os.path.join("assets", asset))]
+        if missing_assets:
+            print(f"Warning: Missing asset files in 'assets' folder for Step 2: {', '.join(missing_assets)}")
+
     if not os.path.exists("fonts"):
-        print("Warning: 'fonts' folder not found. Game will use system default font if text is displayed.")
-    
+        # os.makedirs("fonts") # Only create if you intend to provide the font
+        print("Warning: 'fonts' folder not found. Game will use system default font if Orbitron is not available.")
+    elif not os.path.exists(os.path.join("fonts", "Orbitron-VariableFont_wght.ttf")):
+        print("Warning: Font file 'Orbitron-VariableFont_wght.ttf' not found in 'fonts' folder.")
+
     game_instance = Game()
     game_instance.run()
 
-if  __name__ == '_main_':
+if _name_ == '_main_':
     main()
