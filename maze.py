@@ -3,6 +3,7 @@ import os
 import pygame
 import random
 
+
 # Colors
 BLACK = (33, 33, 33)            # Charcoal (For borders)
 DARKGRAY = (72, 72, 72)         # Graphite (For unvisited cells/walls)
