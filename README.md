@@ -23,11 +23,11 @@
 ## Visuals
 
 * Screenshot of the initial screen
-![image](https://github.com/user-attachments/assets/44a8fd54-b4d0-4b29-9fbe-fca99e1172be)
+* ![image](https://github.com/user-attachments/assets/44a8fd54-b4d0-4b29-9fbe-fca99e1172be)
 * Screenshot of gameplay showing the player and monsters in the maze
-![image](https://github.com/user-attachments/assets/8a54c527-4370-419d-9b73-a5a883ce040a)
+* ![image](https://github.com/user-attachments/assets/8a54c527-4370-419d-9b73-a5a883ce040a)
 * (Screenshot of the BFS "Show Solution" feature)
-![image](https://github.com/user-attachments/assets/f3a4e14d-738c-4d62-926d-f0417c9ce400)
+* ![image](https://github.com/user-attachments/assets/f3a4e14d-738c-4d62-926d-f0417c9ce400)
 
 
 ## Technologies Used
